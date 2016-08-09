@@ -576,3 +576,56 @@ public class SSLService : SSLServiceDelegate {
 		throw SSLError.fail(Int(err), reason)
 	}
 }
+
+private func sslReadCallback(connection: SSLConnectionRef, data: UnsafeMutablePointer<Void>, dataLength: UnsafeMutablePointer<Int>) -> OSStatus {
+    
+    let socketfd = UnsafePointer<Int32>(connection).pointee
+    let bytesRequested = dataLength.pointee
+    let bytesRead = read(socketfd, data, UnsafePointer<Int>(dataLength).pointee)
+    if (bytesRead > 0) {
+        dataLength.initialize(with: bytesRead)
+        if bytesRequested > bytesRead {
+            return Int32(errSSLWouldBlock)
+        } else {
+            return noErr
+        }
+    } else if (bytesRead == 0) {
+        dataLength.initialize(with: 0)
+        return Int32(errSSLClosedGraceful)
+    } else {
+        dataLength.initialize(with: 0)
+        switch (errno) {
+        case ENOENT: return Int32(errSSLClosedGraceful)
+        case EAGAIN: return Int32(errSSLWouldBlock)
+        case ECONNRESET: return Int32(errSSLClosedAbort)
+        default: return Int32(errSecIO)
+        }
+        
+    }
+    
+}
+
+private func sslWriteCallback(connection: SSLConnectionRef, data: UnsafePointer<Void>, dataLength: UnsafeMutablePointer<Int>) -> OSStatus {
+    
+    let socketfd = UnsafePointer<Int32>(connection).pointee
+    let bytesToWrite = dataLength.pointee
+    let bytesWritten = write(socketfd, data, UnsafePointer<Int>(dataLength).pointee)
+    if (bytesWritten > 0) {
+        dataLength.initialize(with: bytesWritten)
+        if (bytesToWrite > bytesWritten) {
+            return Int32(errSSLWouldBlock)
+        } else {
+            return noErr
+        }
+    } else if (bytesWritten == 0) {
+        dataLength.initialize(with: 0)
+        return Int32(errSSLClosedGraceful)
+    } else {
+        dataLength.initialize(with: 0)
+        if (EAGAIN == errno) {
+            return Int32(errSSLWouldBlock)
+        } else {
+            return Int32(errSecIO)
+        }
+    }
+}
