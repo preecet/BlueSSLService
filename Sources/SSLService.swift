@@ -176,22 +176,6 @@ public class SSLService : SSLServiceDelegate {
 	///
 	public func initialize(isServer: Bool) throws {
 		
-		// Common initialization...
-		SSL_library_init()
-		SSL_load_error_strings()
-		OPENSSL_config(nil)
-		OPENSSL_add_all_algorithms_conf()
-		
-		// Server or client specific method determination...
-		self.isServer = isServer
-		if isServer {
-			
-			self.method = SSLv23_server_method()
-			
-		} else {
-			
-			self.method = SSLv23_client_method()
-		}
 		
 		// Prepare the context...
 		try self.prepareContext()
@@ -202,20 +186,7 @@ public class SSLService : SSLServiceDelegate {
 	///
 	public func deinitialize() {
 		
-		// Shutdown and then free SSL pointer...
-		if self.cSSL != nil {
-			SSL_shutdown(self.cSSL!)
-			SSL_free(self.cSSL!)
-		}
 		
-		// Now the context...
-		if self.context != nil {
-			SSL_CTX_free(self.context!)
-		}
-		
-		// Finally, finish cleanup...
-		ERR_free_strings()
-		EVP_cleanup()
 	}
 	
 	///
@@ -225,15 +196,7 @@ public class SSLService : SSLServiceDelegate {
 	///
 	public func onAccept(socket: Socket) throws {
 		
-		// Prepare the connection...
 		let sslConnect = try prepareConnection(socket: socket)
-		
-		// Start the handshake...
-		let rc = SSL_accept(sslConnect)
-		if rc <= 0 {
-			
-			try self.throwLastError(source: "SSL_accept")
-		}
 	}
 	
 	///
@@ -243,15 +206,7 @@ public class SSLService : SSLServiceDelegate {
 	///
 	public func onConnect(socket: Socket) throws {
 		
-		// Prepare the connection...
 		let sslConnect = try prepareConnection(socket: socket)
-		
-		// Start the handshake...
-		let rc = SSL_connect(sslConnect)
-		if rc <= 0 {
-			
-			try self.throwLastError(source: "SSL_connect")
-		}
 	}
 	
 	///
@@ -259,41 +214,7 @@ public class SSLService : SSLServiceDelegate {
 	///
 	public func verifyConnection() throws {
 
-		// Skip the verification if we're using self-signed certs and we're a server...
-		if self.configuration.certsAreSelfSigned && self.isServer {
-			return
-		}
 		
-		guard let sslConnect = self.cSSL else {
-			
-			let reason = "ERROR: verifyConnection, code: \(ECONNABORTED), reason: Unable to reference connection)"
-			throw SSLError.fail(Int(ECONNABORTED), reason)
-		}
-		
-		if SSL_get_peer_certificate(sslConnect) != nil {
-			
-			let rc = SSL_get_verify_result(sslConnect)
-			switch rc {
-				
-			case Int(X509_V_OK):
-				return
-			case Int(X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT), Int(X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY):
-				if self.configuration.certsAreSelfSigned {
-					return
-				}
-			default:
-				break
-			}
-
-			// If we're here, we've got an error...
-			let reason = "ERROR: verifyConnection, code: \(rc), reason: Peer certificate was not presented."
-			throw SSLError.fail(Int(ECONNABORTED), reason)
-			
-		} else {
-			
-			let reason = "ERROR: verifyConnection, code: \(ECONNABORTED), reason: Peer certificate was not presented."
-			throw SSLError.fail(Int(ECONNABORTED), reason)
-		}
 	}
 	
 	///
@@ -308,17 +229,18 @@ public class SSLService : SSLServiceDelegate {
 	public func send(buffer: UnsafeRawPointer!, bufSize: Int) throws -> Int {
 		
 		guard let sslConnect = self.cSSL else {
-			
-			let reason = "ERROR: SSL_write, code: \(ECONNABORTED), reason: Unable to reference connection)"
-			throw SSLError.fail(Int(ECONNABORTED), reason)
-		}
-		
-		let rc = SSL_write(sslConnect, buffer, Int32(bufSize))
-		if rc < 0 {
-			
-			try self.throwLastError(source: "SSL_write")
-		}
-		return Int(rc)
+            
+            let reason = "ERROR: SSL_write, code: \(ECONNABORTED), reason: Unable to reference connection)"
+            throw SSLError.fail(Int(ECONNABORTED), reason)
+        }
+        
+        var processed = 0
+        let rc = SSLWrite(sslConnect, buffer, bufSize, &processed)
+        if rc < 0 {
+            
+            try self.throwLastError(source: "SSL_write")
+        }
+        return processed
 	}
 	
 	///
@@ -333,17 +255,19 @@ public class SSLService : SSLServiceDelegate {
 	public func recv(buffer: UnsafeMutablePointer<Void>!, bufSize: Int) throws -> Int {
 		
 		guard let sslConnect = self.cSSL else {
-			
-			let reason = "ERROR: SSL_read, code: \(ECONNABORTED), reason: Unable to reference connection)"
-			throw SSLError.fail(Int(ECONNABORTED), reason)
-		}
-		
-		let rc = SSL_read(sslConnect, buffer, Int32(bufSize))
-		if rc < 0 {
-			
-			try self.throwLastError(source: "SSL_read")
-		}
-		return Int(rc)
+            
+            let reason = "ERROR: SSL_read, code: \(ECONNABORTED), reason: Unable to reference connection)"
+            throw SSLError.fail(Int(ECONNABORTED), reason)
+        }
+        
+        var processed = 0
+        let rc = SSLRead(sslConnect, buffer, bufSize, &processed)
+        if rc < 0 {
+            
+            try self.throwLastError(source: "SSL_read")
+        }
+        print(instancesock)
+        return processed
 	}
 	
 	// MARK: Private Methods
@@ -453,83 +377,6 @@ public class SSLService : SSLServiceDelegate {
 			let reason = "ERROR: Unable to reference SSL method."
 			throw SSLError.fail(Int(ENOMEM), reason)
 		}
-		
-		// Now we can create the context...
-		self.context = SSL_CTX_new(method)
-		
-		guard let context = self.context else {
-			
-			let reason = "ERROR: Unable to create SSL context."
-			throw SSLError.fail(Int(ENOMEM), reason)
-		}
-		
-		// Handle the stuff common to both client and server...
-		SSL_CTX_set_cipher_list(context, self.configuration.cipherSuite)
-		if self.configuration.certsAreSelfSigned {
-			SSL_CTX_set_verify(context, SSL_VERIFY_NONE, nil)
-		} else {
-			SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nil)
-		}
-		SSL_CTX_set_verify_depth(context, DEFAULT_VERIFY_DEPTH)
-		
-		// Then handle the client/server specific stuff...
-		if !self.isServer {
-			
-			SSL_CTX_ctrl(context, SSL_CTRL_OPTIONS, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION, nil)
-		}
-		
-		// Now configure the rest...
-		//	Note: We've already verified the configuration, so we've at least got the minimum requirements.
-		// 	- First process the CA certificate(s) if any...
-		var rc: Int32 = 0
-		if configuration.caCertificateFilePath != nil || configuration.caCertificateDirPath != nil {
-			
-			let caFile = self.configuration.caCertificateFilePath
-			let caPath = self.configuration.caCertificateDirPath
-			
-			rc = SSL_CTX_load_verify_locations(context, caFile, caPath)
-			if rc <= 0 {
-				
-				try self.throwLastError(source: "CA Certificate file/dir")
-			}
-		}
-		
-		//	- Then the app certificate...
-		if let certFilePath = self.configuration.certificateFilePath {
-			
-			rc = SSL_CTX_use_certificate_file(context, certFilePath, SSL_FILETYPE_PEM)
-			if rc <= 0 {
-				
-				try self.throwLastError(source: "Certificate")
-			}
-		}
-		
-		//	- An' the corresponding Private key file...
-		if let keyFilePath = self.configuration.keyFilePath {
-			
-			rc = SSL_CTX_use_PrivateKey_file(context, keyFilePath, SSL_FILETYPE_PEM)
-			if rc <= 0 {
-				
-				try self.throwLastError(source: "Key file")
-			}
-			
-			// Check it for consistency...
-			rc = SSL_CTX_check_private_key(context)
-			if rc <= 0 {
-				
-				try self.throwLastError(source: "Check private key")
-			}
-		}
-		
-		//	- Finally, if present, the certificate chain path...
-		if let chainPath = configuration.certificateChainFilePath {
-			
-			rc = SSL_CTX_use_certificate_chain_file(context, chainPath)
-			if rc <= 0 {
-				
-				try self.throwLastError(source: "Certificate chain file")
-			}
-		}
 	}
 	
 	///
@@ -541,39 +388,51 @@ public class SSLService : SSLServiceDelegate {
 	///
 	private func prepareConnection(socket: Socket) throws -> UnsafeMutablePointer<SSL> {
 		
-		// Make sure our context is valid...
-		guard let context = self.context else {
-			
-			let reason = "ERROR: Unable to access SSL context."
-			throw SSLError.fail(Int(EFAULT), reason)
-		}
+		let sslConfig = SSLService.Configuration(withChainFilePath: self.configuration.certificateChainFilePath, usingSelfSignedCerts: false)
+        let service = try SSLService(usingConfiguration: sslConfig)
+        
+        // Now create the connection...
+        let cSSL = SSLCreateContext(kCFAllocatorDefault,SSLProtocolSide.serverSide,SSLConnectionType.streamType)
+        service?.cSSL = cSSL!
+        socket.delegate = service
+        
+        SSLSetIOFuncs(cSSL!, sslReadCallback, sslWriteCallback)
+        
+        // load certificates
+        let certFile = configuration.certificateChainFilePath
+        var passwd = "test"
+        
+        var status : OSStatus
+        let p12Data : NSData! = NSData(contentsOfFile: certFile!)
+        
+        //create key dictionary for reading p12 file
+        let key : NSString = kSecImportExportPassphrase as NSString
+        let options : NSDictionary = [key : passwd as AnyObject]
+            
+        var items:CFArray?
+            
+        status = SecPKCS12Import(p12Data, options, &items)
+
+            
+        let newArray = items! as [AnyObject] as NSArray
+        let dictionary = newArray.object(at: 0)
+
+            
+        var secIdentityRef = dictionary.value(forKey: kSecImportItemKeyID as String)
+        secIdentityRef = dictionary.value(forKey: "identity")
+
+            
+        let certs = [secIdentityRef!] as CFArray
+
+        status = SSLSetCertificate(cSSL!, certs)
+
+        instancesock.pointee = socket.socketfd
+        status = SSLSetConnection(cSSL!, instancesock)
+        
+        status = SSLHandshake(cSSL!)
+        
+        return cSSL!
 		
-		// Now create the connection...
-		self.cSSL = SSL_new(context)
-		
-		guard let sslConnect = self.cSSL else {
-			
-			let reason = "ERROR: Unable to create SSL connection."
-			throw SSLError.fail(Int(EFAULT), reason)
-		}
-		
-		// Set the socket file descriptor...
-		SSL_set_fd(sslConnect, socket.socketfd)
-		
-		return sslConnect
-	}
-	
-	private func throwLastError(source: String) throws {
-		
-		let err = ERR_get_error()
-		var errorString: String
-		if let errorStr = ERR_reason_error_string(err) {
-			errorString = String(validatingUTF8: errorStr)!
-		} else {
-			errorString = "Could not determine error reason."
-		}
-		let reason = "ERROR: \(source), code: \(err), reason: \(errorString)"
-		throw SSLError.fail(Int(err), reason)
 	}
 }
 
