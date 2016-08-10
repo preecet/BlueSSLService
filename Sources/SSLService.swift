@@ -62,7 +62,12 @@ public class SSLService : SSLServiceDelegate {
         public private(set) var certsAreSelfSigned = false
         
         /// Cipher suite to use. Defaults to `ALL:!ADH:!EXPORT56:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP:+eNULL`
-        public var cipherSuite: String = "ALL:!ADH:!EXPORT56:RC4+RSA:+HIGH:+MEDIUM:+LOW:+SSLv2:+EXP:+eNULL"
+        public var cipherSuite: String
+            = "14,13,2B,2F,2C,30,9E,9F,23,27,09,28,13,24,0A,14,67,33,6B,39,08,12,16,9C,9D,3C,3D,2F,35,0A"
+        
+        
+        /// Password ( if needed) typically used for PKCS12 files.
+        public var password: String? = nil
         
         // MARK: Lifecycle
         
@@ -523,26 +528,25 @@ public class SSLService : SSLServiceDelegate {
         socket.delegate = service
         
         
-        //      guard let sslConnect = self.cSSL else {
-        
-        //          let reason = "ERROR: Unable to create SSL connection."
-        //          throw SSLError.fail(Int(EFAULT), reason)
-        //      }
-        
         SSLSetIOFuncs(cSSL!, sslReadCallback, sslWriteCallback)
         
         // load certificates
-        let certFile = configuration.certificateChainFilePath
-        var passwd = "secret"
-
+        guard let certFile = configuration.certificateChainFilePath else {
+            let reason = "No PKCS12 file"
+            throw SSLError.fail(Int(ENOENT),reason)
+        }
         
         var status : OSStatus
-        let p12Data : NSData! = NSData(contentsOfFile: certFile!)
-        //if (p12Data == nil) {
-        //    return nil
-        //}
+        guard let p12Data = NSData(contentsOfFile: certFile) else {
+            let reason = "Error reading PKCS12 file"
+            throw SSLError.fail(Int(ENOENT),reason)
+        }
         
         //create key dictionary for reading p12 file
+        guard let passwd : String = self.configuration.password else {
+            let reason = "No password for PKCS12 file"
+            throw SSLError.fail(Int(ENOENT),reason)
+        }
         let key : NSString = kSecImportExportPassphrase as NSString
         let options : NSDictionary = [key : passwd as AnyObject]
         
@@ -554,20 +558,17 @@ public class SSLService : SSLServiceDelegate {
         }
         
         let newArray = items! as [AnyObject] as NSArray
-        let dictionaries = newArray as! [[String:AnyObject]]
-
+        //let dictionaries = newArray as! [[String:AnyObject]]
         let dictionary = newArray.object(at: 0)
  
-        
         var secIdentityRef = dictionary.value(forKey: kSecImportItemKeyID as String)
         secIdentityRef = dictionary.value(forKey: "identity")
-        //secIdentityRef = self.ref // New to break it :)
         
         var certs = [secIdentityRef!]
         var ccerts : Array<SecCertificate> = dictionary.value(forKey: kSecImportItemCertChain as String) as! Array<SecCertificate>
-        //for certificate in ccerts {
-        //    certs += [certificate as AnyObject]
-        //}
+        for certificate in ccerts {
+            print(certificate)
+        }
         //certs += [ccerts[0] as AnyObject]
         certs += [ccerts[1] as AnyObject]
         certs += [ccerts[2] as AnyObject]
@@ -576,15 +577,15 @@ public class SSLService : SSLServiceDelegate {
         if status != errSecSuccess {
             try self.throwLastError(source: "SSLSetCertificate", err: status)
         }
-        
-        let eSize = 4 * sizeof(SSLCipherSuite.self)
+        let cipherlist = configuration.cipherSuite.components(separatedBy: ",")
+        //let cipherlist = configuration.cipherSuite.characters.split(separator: ",")
+        let eSize = cipherlist.count * sizeof(SSLCipherSuite.self)
         let eCipherSuites : UnsafeMutablePointer<SSLCipherSuite> = UnsafeMutablePointer.init(allocatingCapacity: eSize)
-        eCipherSuites.advanced(by: 0).pointee = UInt32("35" , radix: 16)!
-        eCipherSuites.advanced(by: 1).pointee = UInt32("39" , radix: 16)!
-        eCipherSuites.advanced(by: 2).pointee = UInt32("67" , radix: 16)!
-        eCipherSuites.advanced(by: 3).pointee = UInt32("99" , radix: 16)!
-        ///////////////////////////status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, 4)
-        status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, 4)
+        for i in 0..<cipherlist.count {
+            eCipherSuites.advanced(by: i).pointee = UInt32(cipherlist[i] , radix: 16)!
+        }
+
+        status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, cipherlist.count)
         if status != errSecSuccess {
             try self.throwLastError(source: "SSLSetConnection", err: status)
         }
@@ -614,7 +615,7 @@ public class SSLService : SSLServiceDelegate {
     
     private func throwLastError(source: String, err: OSStatus) throws {
         var errorString: String
-        if let val = errors[err] {
+        if let val = STerrors[err] {
             errorString = val
         } else {
             errorString = "Could not determine error reason."
