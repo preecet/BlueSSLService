@@ -558,7 +558,6 @@ public class SSLService : SSLServiceDelegate {
         }
         
         let newArray = items! as [AnyObject] as NSArray
-        //let dictionaries = newArray as! [[String:AnyObject]]
         let dictionary = newArray.object(at: 0)
  
         var secIdentityRef = dictionary.value(forKey: kSecImportItemKeyID as String)
@@ -580,7 +579,6 @@ public class SSLService : SSLServiceDelegate {
         
         
         let cipherlist = configuration.cipherSuite.components(separatedBy: ",")
-        //let cipherlist = configuration.cipherSuite.characters.split(separator: ",")
         let eSize = cipherlist.count * sizeof(SSLCipherSuite.self)
         let eCipherSuites : UnsafeMutablePointer<SSLCipherSuite> = UnsafeMutablePointer.init(allocatingCapacity: eSize)
         for i in 0..<cipherlist.count {
@@ -591,32 +589,13 @@ public class SSLService : SSLServiceDelegate {
             try self.throwLastError(source: "SSLSetConnection", err: status)
         }
         
-        /*
-        let eSize = 4 * sizeof(SSLCipherSuite.self)
-        let eCipherSuites : UnsafeMutablePointer<SSLCipherSuite> = UnsafeMutablePointer.init(allocatingCapacity: eSize)
-        eCipherSuites.advanced(by: 0).pointee = UInt32("35" , radix: 16)!
-        eCipherSuites.advanced(by: 1).pointee = UInt32("39" , radix: 16)!
-        eCipherSuites.advanced(by: 2).pointee = UInt32("67" , radix: 16)!
-        eCipherSuites.advanced(by: 3).pointee = UInt32("99" , radix: 16)!
-        status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, 4)
-        if status != errSecSuccess {
-            try self.throwLastError(source: "SSLSetConnection", err: status)
-        }
-        */
-        
         // Set the socket file descriptor...
-        //funnysock = socket.socketfd
         service!.instancesock.pointee = socket.socketfd
-        //instancesock.pointee = socket.socketfd
-        //print("connect \(service!.instancesock.pointee) cSSL=\(service?.cSSL)")
-        //let s  = UnsafeMutablePointer<Int32>.init(allocatingCapacity: 1)
-        //s.pointee = socket.socketfd
         status = SSLSetConnection(cSSL!, service!.instancesock)
         if status != errSecSuccess {
             try self.throwLastError(source: "SSLSetConnection", err: status)
         }
         
-        //print("Handshake on fd=\(socket.socketfd)")
         repeat {
             status = SSLHandshake(cSSL!)
         } while status == errSSLWouldBlock
