@@ -568,9 +568,12 @@ public class SSLService : SSLServiceDelegate {
         //for certificate in ccerts {
         //    print(certificate)
         //}
-        //certs += [ccerts[0] as AnyObject]
-        certs += [ccerts[1] as AnyObject]
-        certs += [ccerts[2] as AnyObject]
+        /////certs += [ccerts[0] as AnyObject]
+        //certs += [ccerts[1] as AnyObject]
+        //certs += [ccerts[2] as AnyObject]
+        for i in 1 ..< ccerts.count {
+            certs += [ccerts[i] as AnyObject]
+        }
         
         status = SSLSetCertificate(cSSL!, certs as CFArray)
         if status != errSecSuccess {
@@ -677,13 +680,13 @@ private func sslWriteCallback(connection: SSLConnectionRef, data: UnsafePointer<
 }
 
 let STerrors: [OSStatus: String] = [
-    errSecSuccess : "errSecSuccess",
-    errSSLNegotiation: "errSSLNegotiation",
-    errSecParam: "errSecParam",
-    errSSLClosedAbort: "errSSLClosedAbort",
-    errSecIO: "errSecIO",
-    errSSLWouldBlock: "errSSLWouldBlock",
-    errSSLPeerUnknownCA: "errSSLPeerUnknownCA",
-    errSSLBadRecordMac: "errSSLBadRecordMac",
-    errSecAuthFailed: "errSecAuthFailed"
+    errSecSuccess       : "errSecSuccess",
+    errSSLNegotiation   : "errSSLNegotiation",
+    errSecParam         : "errSecParam",
+    errSSLClosedAbort   : "errSSLClosedAbort",
+    errSecIO            : "errSecIO",
+    errSSLWouldBlock    : "errSSLWouldBlock",
+    errSSLPeerUnknownCA : "errSSLPeerUnknownCA",
+    errSSLBadRecordMac  : "errSSLBadRecordMac",
+    errSecAuthFailed    : "errSecAuthFailed"
 ]
