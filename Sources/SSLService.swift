@@ -194,7 +194,7 @@ public class SSLService : SSLServiceDelegate {
     /// Deinitialize SSL Service
     ///
     public func deinitialize() {
-        print("deinit \(instancesock.pointee) cSSL=\(self.cSSL)")
+        //print("deinit \(instancesock.pointee) cSSL=\(self.cSSL)")
         
         // Shutdown and then free SSL pointer...
         if self.cSSL != nil {
@@ -566,9 +566,9 @@ public class SSLService : SSLServiceDelegate {
         
         var certs = [secIdentityRef!]
         var ccerts : Array<SecCertificate> = dictionary.value(forKey: kSecImportItemCertChain as String) as! Array<SecCertificate>
-        for certificate in ccerts {
-            print(certificate)
-        }
+        //for certificate in ccerts {
+        //    print(certificate)
+        //}
         //certs += [ccerts[0] as AnyObject]
         certs += [ccerts[1] as AnyObject]
         certs += [ccerts[2] as AnyObject]
@@ -577,6 +577,8 @@ public class SSLService : SSLServiceDelegate {
         if status != errSecSuccess {
             try self.throwLastError(source: "SSLSetCertificate", err: status)
         }
+        
+        
         let cipherlist = configuration.cipherSuite.components(separatedBy: ",")
         //let cipherlist = configuration.cipherSuite.characters.split(separator: ",")
         let eSize = cipherlist.count * sizeof(SSLCipherSuite.self)
@@ -584,17 +586,29 @@ public class SSLService : SSLServiceDelegate {
         for i in 0..<cipherlist.count {
             eCipherSuites.advanced(by: i).pointee = UInt32(cipherlist[i] , radix: 16)!
         }
-
         status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, cipherlist.count)
         if status != errSecSuccess {
             try self.throwLastError(source: "SSLSetConnection", err: status)
         }
         
+        /*
+        let eSize = 4 * sizeof(SSLCipherSuite.self)
+        let eCipherSuites : UnsafeMutablePointer<SSLCipherSuite> = UnsafeMutablePointer.init(allocatingCapacity: eSize)
+        eCipherSuites.advanced(by: 0).pointee = UInt32("35" , radix: 16)!
+        eCipherSuites.advanced(by: 1).pointee = UInt32("39" , radix: 16)!
+        eCipherSuites.advanced(by: 2).pointee = UInt32("67" , radix: 16)!
+        eCipherSuites.advanced(by: 3).pointee = UInt32("99" , radix: 16)!
+        status = SSLSetEnabledCiphers(cSSL!, eCipherSuites, 4)
+        if status != errSecSuccess {
+            try self.throwLastError(source: "SSLSetConnection", err: status)
+        }
+        */
+        
         // Set the socket file descriptor...
         //funnysock = socket.socketfd
         service!.instancesock.pointee = socket.socketfd
         //instancesock.pointee = socket.socketfd
-        print("connect \(service!.instancesock.pointee) cSSL=\(service?.cSSL)")
+        //print("connect \(service!.instancesock.pointee) cSSL=\(service?.cSSL)")
         //let s  = UnsafeMutablePointer<Int32>.init(allocatingCapacity: 1)
         //s.pointee = socket.socketfd
         status = SSLSetConnection(cSSL!, service!.instancesock)
@@ -602,7 +616,7 @@ public class SSLService : SSLServiceDelegate {
             try self.throwLastError(source: "SSLSetConnection", err: status)
         }
         
-        print("Handshake on fd=\(socket.socketfd)")
+        //print("Handshake on fd=\(socket.socketfd)")
         repeat {
             status = SSLHandshake(cSSL!)
         } while status == errSSLWouldBlock
@@ -633,7 +647,7 @@ private func sslReadCallback(connection: SSLConnectionRef, data: UnsafeMutablePo
     let socketfd = UnsafePointer<Int32>(connection).pointee
     let bytesRequested = dataLength.pointee
     let bytesRead = read(socketfd, data, UnsafePointer<Int>(dataLength).pointee)
-    print("read \(bytesRead) bytes of \(bytesRequested) from fd=\(socketfd)")
+    //print("read \(bytesRead) bytes of \(bytesRequested) from fd=\(socketfd)")
     if (bytesRead > 0) {
         dataLength.initialize(with: bytesRead)
         if bytesRequested > bytesRead {
@@ -662,7 +676,7 @@ private func sslWriteCallback(connection: SSLConnectionRef, data: UnsafePointer<
     let socketfd = UnsafePointer<Int32>(connection).pointee
     let bytesToWrite = dataLength.pointee
     let bytesWritten = write(socketfd, data, UnsafePointer<Int>(dataLength).pointee)
-    print("wrote \(bytesWritten) of \(bytesToWrite) bytes from fd=\(socketfd)")
+    //print("wrote \(bytesWritten) of \(bytesToWrite) bytes from fd=\(socketfd)")
     if (bytesWritten > 0) {
         dataLength.initialize(with: bytesWritten)
         if (bytesToWrite > bytesWritten) {
@@ -690,5 +704,7 @@ let STerrors: [OSStatus: String] = [
     errSSLClosedAbort: "errSSLClosedAbort",
     errSecIO: "errSecIO",
     errSSLWouldBlock: "errSSLWouldBlock",
-    errSSLPeerUnknownCA: "errSSLPeerUnknownCA"
+    errSSLPeerUnknownCA: "errSSLPeerUnknownCA",
+    errSSLBadRecordMac: "errSSLBadRecordMac",
+    errSecAuthFailed: "errSecAuthFailed"
 ]
