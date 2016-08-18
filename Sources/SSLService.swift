@@ -140,7 +140,7 @@ public class SSLService : SSLServiceDelegate {
     
     public private(set) var ref: SecIdentity?
     
-    public private(set) var instancesock = UnsafeMutablePointer<Int32>.init(allocatingCapacity: 1)
+    public private(set) var instancesock = UnsafeMutablePointer<Int32>.init(allocatingCapacity: 1)  // fixme
     
     // MARK: -- Private
     
@@ -176,6 +176,20 @@ public class SSLService : SSLServiceDelegate {
         try self.validate(configuration: config)
     }
     
+    ///
+    /// Clone an existing instance of SSLService.
+    ///
+    private init?(with source: SSLService) throws {
+    
+    	self.configuration = source.configuration
+    
+    	// Validate the config...
+    	try self.validate(configuration: source.configuration)
+    
+    	// Initialize as client...
+    	try self.initialize(isServer: true)
+    }
+    
     
     // MARK: SSLServiceDelegate Protocol
     
@@ -194,8 +208,6 @@ public class SSLService : SSLServiceDelegate {
     /// Deinitialize SSL Service
     ///
     public func deinitialize() {
-        //print("deinit \(instancesock.pointee) cSSL=\(self.cSSL)")
-        
         // Shutdown and then free SSL pointer...
         if self.cSSL != nil {
             SSLClose(self.cSSL!)
@@ -442,71 +454,24 @@ public class SSLService : SSLServiceDelegate {
     ///
     private func prepareContext() throws {
 
-        ///SSL_CTX_set_cipher_list(context, self.configuration.cipherSuite)
-        if self.configuration.certsAreSelfSigned {
-            ///SSL_CTX_set_verify(context, SSL_VERIFY_NONE, nil)
-        } else {
-            ///SSL_CTX_set_verify(context, SSL_VERIFY_PEER, nil)
-        }
-        ///SSL_CTX_set_verify_depth(context, DEFAULT_VERIFY_DEPTH)
-        
-        // Then handle the client/server specific stuff...
         if !self.isServer {
-            
-            ///SSL_CTX_ctrl(context, SSL_CTRL_OPTIONS, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION, nil)
+            let reason = "Server only supported"
+            throw SSLError.fail(Int(ENOENT),reason)
         }
-        
-        // Now configure the rest...
+
         //	Note: We've already verified the configuration, so we've at least got the minimum requirements.
-        // 	- First process the CA certificate(s) if any...
-        var rc: Int32 = 0
-        if configuration.caCertificateFilePath != nil || configuration.caCertificateDirPath != nil {
-            
-            let caFile = self.configuration.caCertificateFilePath
-            let caPath = self.configuration.caCertificateDirPath
-            
-            ///rc = SSL_CTX_load_verify_locations(context, caFile, caPath)
-            if rc <= 0 {
-                
-                try self.throwLastError(source: "CA Certificate file/dir", err: rc)
-            }
-        }
         
-        //	- Then the app certificate...
-        if let certFilePath = self.configuration.certificateFilePath {
-            
-            ///rc = SSL_CTX_use_certificate_file(context, certFilePath, SSL_FILETYPE_PEM)
-            if rc <= 0 {
-                
-                try self.throwLastError(source: "Certificate", err: rc)
-            }
-        }
-        
-        //	- An' the corresponding Private key file...
-        if let keyFilePath = self.configuration.keyFilePath {
-            
-            ///rc = SSL_CTX_use_PrivateKey_file(context, keyFilePath, SSL_FILETYPE_PEM)
-            if rc <= 0 {
-                
-                try self.throwLastError(source: "Key file", err: rc)
-            }
-            
-            // Check it for consistency...
-            ///rc = SSL_CTX_check_private_key(context)
-            if rc <= 0 {
-                
-                try self.throwLastError(source: "Check private key", err: rc)
-            }
-        }
-        
-        //	- Finally, if present, the certificate chain path...
+        //	- Must have certificate chain path...
         if let chainPath = configuration.certificateChainFilePath {
-            
-            //rc = SSL_CTX_use_certificate_chain_file(context, chainPath)
-            if rc <= 0 {
-                
-                //try self.throwLastError(source: "Certificate chain file")
+
+            guard let p12Data = NSData(contentsOfFile: chainPath) else {
+                let reason = "Error reading PKCS12 file"
+                throw SSLError.fail(Int(ENOENT),reason)
             }
+
+        } else {
+            let reason = "Error reading PKCS12 file"
+            throw SSLError.fail(Int(ENOENT),reason)
         }
     }
     
@@ -688,5 +653,6 @@ let STerrors: [OSStatus: String] = [
     errSSLWouldBlock    : "errSSLWouldBlock",
     errSSLPeerUnknownCA : "errSSLPeerUnknownCA",
     errSSLBadRecordMac  : "errSSLBadRecordMac",
-    errSecAuthFailed    : "errSecAuthFailed"
+    errSecAuthFailed    : "errSecAuthFailed",
+    errSSLClosedGraceful: "errSSLClosedGraceful"
 ]
